@@ -1,0 +1,5 @@
+.venv/
+vendor/
+out/
+songs/
+__pycache__/
