@@ -3,3 +3,4 @@ vendor/
 out/
 songs/
 __pycache__/
+.cache/

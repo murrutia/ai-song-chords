@@ -20,12 +20,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from chords import (
-    ChordRecognizer,
     add_chord_args,
     analyze,
     key_name,
     load_audio,
+    make_recognizer,
     pick_device,
+    prepare_audio,
+    resample,
 )
 
 WHISPER_SR = 16000
@@ -151,7 +153,7 @@ def split_long(words: list[Word]) -> list[list[Word]]:
 def place_chords(lines: list[Line], chords) -> list[Line]:
     """Rattache chaque changement d'accord à un mot, ou à une ligne instrumentale."""
     chords = [
-        (start, end, name) for start, end, label, name in chords if label is not None
+        (start, end, name) for start, end, chord, name in chords if chord != "N"
     ]
     result = []
     prev_end = 0.0
@@ -306,20 +308,26 @@ def main():
     add_chord_args(parser)
     args = parser.parse_args()
 
-    recognizer = ChordRecognizer(
-        large_vocab=not args.simple, device=pick_device(args.device)
-    )
+    device = pick_device(args.device)
+    recognizer = make_recognizer(args.model, args.simple, device)
     args.out.mkdir(parents=True, exist_ok=True)
 
     for path in args.audio:
         print(f"=== {path.name}", file=sys.stderr)
-        print("  accords...", file=sys.stderr)
+        if args.separate:
+            print("  séparation des sources (Demucs)...", file=sys.stderr)
+        audio = prepare_audio(path, args.separate, device)
+        print(f"  accords ({args.model})...", file=sys.stderr)
         chords, key, flats = analyze(
-            recognizer, load_audio(path), args.min_duration, args.spelling
+            recognizer, audio["chords"], args.min_duration, args.spelling, args.simple
         )
         print(f"  paroles ({args.backend}, {args.whisper_model})...", file=sys.stderr)
+        if audio["vocals"] is not None:
+            vocals = resample(*audio["vocals"], WHISPER_SR)
+        else:
+            vocals = load_audio(path, WHISPER_SR)
         segments = transcribe(
-            load_audio(path, WHISPER_SR),
+            vocals,
             args.backend,
             args.whisper_model,
             args.language,
